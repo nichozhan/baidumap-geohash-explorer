@@ -1,0 +1,250 @@
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no"/>
+    <script type="text/javascript"
+            src="http://api.map.baidu.com/api?v=3.0&ak=xxxxxxxxx"></script>
+    <style type="text/css">
+        body, html {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            font-family: "微软雅黑";
+        }
+
+        #allmap {
+            width: 100%;
+            height: 500px;
+            overflow: hidden;
+        }
+
+        #result {
+            width: 100%;
+            font-size: 12px;
+        }
+
+        ul, li {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        p {
+            font-size: 12px;
+        }
+
+        li {
+            line-height: 28px;
+        }
+        fieldset {
+            margin: 20px;
+            border: 1px solid #666;
+            border-radius: 8px;
+            box-shadow: 0 0 10px #666;
+            padding: 10px;
+        }
+        legend {
+            padding: 2px 4px;
+            background: #fff;
+        }
+        fieldset > legend {
+            float: left;
+            margin-top: -20px;
+        }
+        fieldset > legend + * {
+            clear: both;
+        }
+    </style>
+    <title>BaiduMap Geohash Explorer</title>
+</head>
+<body>
+<div id="allmap" style="overflow:hidden;zoom:1;position:relative;">
+    <div id="map" style="height:100%;-webkit-transition: all 0.5s ease-in-out;transition: all 0.5s ease-in-out;"></div>
+</div>
+<form style="width:fit-content;position:absolute;left:5px;top:10px">
+    <fieldset>
+        <legend>Geohash Explorer</legend>
+        <ul>
+            <li>
+                <label for="lon">经度：</label>
+                <input type="number" name="lon" id="lon" class="latlon" placeholder="longitude e.g. 104.0638546" title="Longitude">
+            </li>
+            <li>
+                <label for="lat">纬度：</label>
+                <input type="text" name="lat" id="lat" class="latlon" placeholder="latitude e.g. 30.6599157" title="Latitude">
+            </li>
+            <li>
+                <label for="precision">Geohash 长度：</label>
+                <select name="precision" id="precision" class="latlon">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                </select>
+            </li>
+            <li>
+                <label for="geohash">Geohash: </label>
+                <input type="text" name="geohash" id="geohash">
+            </li>
+            <li>
+                <label for="mark-neighbours">标注相邻区域：</label>
+                <input name="mark-neighbours" id="mark-neighbours" type="checkbox">
+            </li>
+        </ul>
+    </fieldset>
+</form>
+<div>
+    <p>当前鼠标单击获取的经纬度：<span id="current-lon-lat" style="font-weight:bold"></span></p>
+</div>
+<div style="color:green">
+    <p>经度 + 纬度 + Geohash长度 => Geohash</p>
+    <p>Geohash => 经度 + 纬度 + Geohash长度</p>
+</div>
+</body>
+<script type="module">
+    import Geohash from "https://cdn.jsdelivr.net/gh/chrisveness/latlon-geohash/latlon-geohash.js";
+    // 百度地图API功能
+    const map = new BMap.Map('map');
+    // map.centerAndZoom("成都", 1);
+    map.enableScrollWheelZoom();
+    map.disableDoubleClickZoom();
+    //单击获取经纬度
+    map.addEventListener("click", function (e) {
+        document.querySelector("#current-lon-lat").innerHTML = "{longitude: " + e.point.lng + ", latitude: " + e.point.lat + "}";
+    });
+    var overlays = [];
+
+    // 根据点的数组自动调整缩放级别
+    function setZoom(points) {
+        const viewport = map.getViewport(eval(points));
+        const mapZoom = viewport.zoom;
+        const centerPoint = viewport.center;
+        map.centerAndZoom(centerPoint, mapZoom);
+    }
+
+    function cleanOverlays(overlays) {
+        for (let i = 0; i < overlays.length; i++) {
+            map.removeOverlay(overlays[i]);
+        }
+    }
+
+    function drawCell(geohash) {
+        const bounds = Geohash.bounds(geohash);
+        let boundPoints = [
+            new BMap.Point(bounds.sw.lon, bounds.sw.lat),
+            new BMap.Point(bounds.sw.lon, bounds.ne.lat),
+            new BMap.Point(bounds.ne.lon, bounds.ne.lat),
+            new BMap.Point(bounds.ne.lon, bounds.sw.lat)
+        ];
+        const polygon = new BMap.Polygon(boundPoints, {strokeColor: "blue", strokeWeight: 4});
+        map.addOverlay(polygon);
+        overlays.push(polygon);
+
+        let latLon = Geohash.decode(geohash);
+        let centre = new BMap.Point(latLon.lon, latLon.lat);
+        const label = new BMap.Label(geohash, {
+            position: centre,
+            offset: new BMap.Size(0, 0)
+        });
+        label.setStyle({
+            color: "#000",
+            border: "0px",
+            backgroundColor: "0.000000000001",
+            fontSize: "12px",
+            height: "20px",
+            lineHeight: "20px",
+            transform: 'translateX(-50%)'
+        });
+        map.addOverlay(label);
+        overlays.push(label);
+        return boundPoints;
+    }
+
+    function drawNeighbours(geohash) {
+        let boundPoints = [];
+        const neighbours = Geohash.neighbours(geohash);
+        boundPoints = boundPoints.concat(drawCell(neighbours.e));
+        boundPoints = boundPoints.concat(drawCell(neighbours.w));
+        boundPoints = boundPoints.concat(drawCell(neighbours.s));
+        boundPoints = boundPoints.concat(drawCell(neighbours.n));
+        boundPoints = boundPoints.concat(drawCell(neighbours.se));
+        boundPoints = boundPoints.concat(drawCell(neighbours.sw));
+        boundPoints = boundPoints.concat(drawCell(neighbours.ne));
+        boundPoints = boundPoints.concat(drawCell(neighbours.nw));
+        return boundPoints;
+    }
+
+    document.addEventListener('DOMContentLoaded', function(event) {
+        document.querySelectorAll('#lat,#lon,#mark-neighbours').forEach(input => input.onchange = function() {
+            cleanOverlays(overlays);
+            // encode geohash
+            try {
+                const lat = document.querySelector('#lat').value;
+                const lon = document.querySelector('#lon').value;
+                const precision = document.querySelector('#precision').value;
+                const geohash = Geohash.encode(lat, lon, precision);
+                const markNeighbours = document.querySelector("#mark-neighbours").checked;
+                document.querySelector('#geohash').value = geohash;
+
+                let boundPoints = drawCell(geohash);
+                if (markNeighbours) {
+                    boundPoints = boundPoints.concat(drawNeighbours(geohash));
+                }
+                setZoom(boundPoints);
+            } catch (err) { console.log(err); }
+        });
+
+        document.querySelector('#precision').onchange = function() {
+            cleanOverlays(overlays);
+            // encode geohash & reset lat/lon to reflect new precision
+            try {
+                const lat = document.querySelector('#lat').value;
+                const lon = document.querySelector('#lon').value;
+                const precision = document.querySelector('#precision').value;
+                const geohash = Geohash.encode(lat, lon, precision);
+                const markNeighbours = document.querySelector("#mark-neighbours").checked;
+                const latlon = Geohash.decode(geohash);
+                document.querySelector('#lat').value = latlon.lat;
+                document.querySelector('#lon').value = latlon.lon;
+                document.querySelector('#geohash').value = geohash;
+
+                var boundPoints = drawCell(geohash);
+                if (markNeighbours) {
+                    boundPoints = boundPoints.concat(drawNeighbours(geohash));
+                }
+                setZoom(boundPoints);
+            } catch (err) { console.log(err); }
+        };
+
+        document.querySelector('#geohash').onchange = function() {
+            cleanOverlays(overlays);
+            // decode geohash
+            const geohash = document.querySelector('#geohash').value.replace(/\W/g, '');
+            const markNeighbours = document.querySelector("#mark-neighbours").checked;
+            const latlon = Geohash.decode(geohash);
+            document.querySelector('#lat').value = latlon.lat;
+            document.querySelector('#lon').value = latlon.lon;
+            document.querySelector('#precision').value = document.querySelector('#geohash').value.length;
+
+            let boundPoints = drawCell(geohash);
+            if (markNeighbours) {
+                boundPoints = boundPoints.concat(drawNeighbours(geohash));
+            }
+            setZoom(boundPoints);
+        };
+
+        document.querySelector('#lon').value = 104;
+        document.querySelector('#lat').value = 30;
+        document.querySelector('#precision').value = 3;
+        document.querySelector('#precision').onchange();
+    });
+</script>
+</html>
